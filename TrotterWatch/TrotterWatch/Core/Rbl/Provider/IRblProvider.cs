@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace TrotterWatch.Core.Rbl.Provider
 {
@@ -11,6 +12,7 @@ namespace TrotterWatch.Core.Rbl.Provider
         string RblProviderUri { get; }
         IPAddress RequestIpAddress { get; }
         IPAddress DnsServerAddress { get; }
+        Task<IEnumerable<IRblResult>> CheckProvider();
 
     }
 }

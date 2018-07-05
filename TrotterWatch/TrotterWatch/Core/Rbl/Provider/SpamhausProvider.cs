@@ -1,16 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
+using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using NetTools;
 
+[assembly: InternalsVisibleTo("TrotterWatchTests")]
 namespace TrotterWatch.Core.Rbl.Provider
 {
     internal sealed class SpamhausProvider : BaseRblProvider
     {
         private static readonly string _address = "zen.spamhaus.org";
-        private static readonly Dictionary<string, IPAddressRange> SpamHausZones;
+        private static readonly IEnumerable<IRblResult> SpamHausZones;
 
         static SpamhausProvider()
         {
@@ -19,7 +23,7 @@ namespace TrotterWatch.Core.Rbl.Provider
             lock (locker)
             {
                 if (SpamHausZones != null)
-                    SpamHausZones = TrotterWatchUtil.SpamhausZones();
+                    SpamHausZones = TrotterWatchUtil.SpamhausResults();
             }
         }
 
@@ -40,14 +44,44 @@ namespace TrotterWatch.Core.Rbl.Provider
 
         private async Task<IEnumerable<IRblResult>> CheckHostName()
         {
-            var ipresults = await Dns.GetHostAddressesAsync($"{RequestPtrName.HostName}.{_address}");
-            return CheckRblResults(ipresults);
+            try
+            {
+                var ipresults = await Dns.GetHostAddressesAsync($"{RequestPtrName.HostName}.{_address}");
+                return CheckRblResults(ipresults);
+            }
+            catch (SocketException)
+            {
+                return new List<IRblResult>(0);
+            }
         }
 
         private async Task<IEnumerable<IRblResult>> CheckIp()
         {
-            var ipresults = await Dns.GetHostAddressesAsync($"{RequestIpAddress}.{_address}");
-            return CheckRblResults(ipresults);
+            try
+            {
+                var ipresults = await Dns.GetHostAddressesAsync($"{FlipOctets(RequestIpAddress)}.{_address}");
+                return CheckRblResults(ipresults);
+            }
+            catch (SocketException)
+            {
+                return new List<IRblResult>(0);
+            }
+        }
+
+        private string FlipOctets(IPAddress requestIp)
+        {
+            var flippedAddress = requestIp.ToString().Split('.').Reverse().ToArray();
+            var formattedIp = new StringBuilder();
+
+            for (int i = 0; i < 4; i++)
+            {
+                formattedIp.Append(flippedAddress[i]);
+
+                if(i != 3)
+                    formattedIp.Append(".");
+            }
+
+            return formattedIp.ToString();
         }
 
         private IEnumerable<IRblResult> CheckRblResults(IPAddress[] ipResults)
@@ -56,33 +90,15 @@ namespace TrotterWatch.Core.Rbl.Provider
 
             for (int i = 0; i < ipResults.Length; i++)
             {
-
-
-
+                rblResultsArr[i] = GetListedZone(ipResults[i]);
             }
 
-
+            return rblResultsArr;
         }
 
-
-        private IRblResult CreateRblResult(IPAddress returnCode)
+        private IRblResult GetListedZone(IPAddress returnCode)
         {
-            var raw = returnCode.ToString();
-            var ipAddress = returnCode;
-            var listedOn = ListedZone(returnCode);
-            var advisoryType = RblAdvisoryType.IllegalExploit;
-
-
-            return new RblResult();
-        }
-
-
-        private string ListedZone(IPAddress returnCode)
-        {
-            foreach (var zone in SpamHausZones)
-            {
-                zone.Value.Contains(returnCode);
-            }
+            return SpamHausZones.Single(n => n.ReturnCode.Any(range => range.Contains(returnCode)));
         }
 
     }
