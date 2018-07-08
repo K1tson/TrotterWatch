@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
-using TrotterWatch.Core.Rbl;
-using TrotterWatch.CustomException;
+using TrotterWatch.Core.Rbl.Provider;
 using TrotterWatch.Models;
 
 namespace TrotterWatch.Core
@@ -16,68 +16,39 @@ namespace TrotterWatch.Core
     public sealed class TrotterWatchMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly TrotterWatchOptions _options;
+        private readonly bool _continueChecks;
+        private readonly IEnumerable<IRblProvider> _rblProviders;
 
         public TrotterWatchMiddleware(RequestDelegate next, IOptions<TrotterWatchOptions> options)
         {
             _next = next;
-            _options = options.Value;
+            _continueChecks = options.Value.ContinueChecks;
+            _rblProviders = options.Value.RblProviders;
         }
 
         public async Task Invoke(HttpContext context)
         {
-            //Get Requested IP
-            //ToDo: Check if this actually works
-            var requestIp = context.Connection.RemoteIpAddress;
+            var isListed = false;
 
-            //Instantiate Singleton RBL Providers
-            //ToDo: Use custom DNS server or not??
-            var rblCollection = TrotterWatchUtil.GetRblCollection(requestIp, IPAddress.Parse("8.8.8.8"));
-
-            bool listed = false;
-            List<IRblResult> rblResults = null;
-
-            foreach (var rblProvider in rblCollection)
+            foreach (var provider in _rblProviders)
             {
-                //Checks RBL Provider to see if listed
-                var result = await rblProvider.CheckProvider();
+                var listed = await provider.CheckProvider(context);
 
-                if (result.Any())
+                if (listed && !_continueChecks)
                 {
-                    if (listed == false)
-                    {
-                        listed = true;
-                        rblResults = new List<IRblResult>();
-                    }
-                    
-                    //Add's provider results to list.
-                    rblResults.AddRange(result);
-                }
-            }
-
-            //Not Listed in RBL
-            if (!listed)
-            {
-                // Call the next middleware delegate in the pipeline 
-                await _next.Invoke(context);
-            }
-            else
-            {
-                //Add's X- Headers
-                foreach (var result in rblResults)
-                {
-                    context.Response.Headers.Add("X-TrotterWatch", $"You Plonka! Your IP {requestIp} is listed on {result.ListedOn} due to type \"{result.Type}\"");
+                    isListed = true;
+                    break;
                 }
 
-                //Add's Forbidden Response
-                context.Response.StatusCode = 403;
-
-                //ToDo: Add Logging
+                isListed = true;
             }
 
-           
+            if (!isListed)
+              await _next.Invoke(context);
+
             //Short-circuits request pipeline
         }
+
 
 
     }

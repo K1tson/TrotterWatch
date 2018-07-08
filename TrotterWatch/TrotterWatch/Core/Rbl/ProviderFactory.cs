@@ -4,9 +4,10 @@ using System.Text;
 
 namespace TrotterWatch.Core.Rbl
 {
-    public enum RblAdvisoryType
+    public class ProviderFactory
     {
-        SpamService,
-        IllegalExploit,
+
+
+
     }
 }
