@@ -14,15 +14,9 @@ namespace TestApplication
 {
     public class Startup
     {
-        private readonly IEnumerable<IRblProvider> _providers;
-
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
-            _providers = new List<IRblProvider>
-            {
-                new RblProvider("Spamhaus", "zen.spamhaus.org", RblType.Both)
-            };
         }
 
         public IConfiguration Configuration { get; }
@@ -36,13 +30,8 @@ namespace TestApplication
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IHostingEnvironment env, ILoggerFactory loggerFactory)
         {
-            loggerFactory.AddDebug();
-
-            app.UseTrotterWatch(new TrotterWatchOptions
-            {
-                RblProviders = _providers,
-                Logger = loggerFactory.CreateLogger("TrotterWatchLogger")
-            });
+            //Use of default RBL's
+            app.UseTrotterWatch();
 
             if (env.IsDevelopment())
             {

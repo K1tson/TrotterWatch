@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TrotterWatch.Core.Rbl;
 using TrotterWatch.Core.Rbl.Provider;
 using TrotterWatch.Logging;
 using TrotterWatch.Models;
@@ -26,7 +27,7 @@ namespace TrotterWatch.Core
         {
             _next = next;
             _continueChecks = options.ContinueChecks;
-            _rblProviders = options.RblProviders;
+            _rblProviders = options.RblProviders is null ? ProviderFactory.ReturnRblItems() : ProviderFactory.ReturnRblItems(options.RblProviders);
             _logger = new TrotterLog(options.Logger);
         }
 
@@ -44,21 +45,18 @@ namespace TrotterWatch.Core
 
             var isListed = false;
 
+            //Process the RBL Providers
             foreach (var provider in _rblProviders)
             {
-                _logger.LogEvent(LogLevel.Information, $"Checking Rbl Provider {provider.ProviderName} against Url {provider.ProviderUrl}...");
-                var listed = await provider.CheckProvider(context, _logger);
+                var providerResult = await InitiateProvider(context, provider);
 
-                if (listed && !_continueChecks)
+                if (!providerResult) continue;
+                isListed = true;
+
+                if (!_continueChecks)
                 {
-                    isListed = true;
-                    _logger.LogEvent(LogLevel.Information, $"Remote IP/PTR is listed on {provider.ProviderName}");
-                    _logger.LogEvent(LogLevel.Information, $"Cancelling further Rbl checks as ContinueChecks is set to false");
                     break;
                 }
-
-                _logger.LogEvent(LogLevel.Information, $"Moving onto next provider...");
-                isListed = true;
             }
 
             if (!isListed)
@@ -67,8 +65,24 @@ namespace TrotterWatch.Core
                 _logger.LogEvent(LogLevel.Information, $"Moving onto the next Middleware Component");
                 await _next.Invoke(context);
             }
-             
-            //Short-circuits request pipeline
+
+            //Not Listed == Short-circuits request pipeline (no booley, no invokey)
+        }
+
+        private async Task<bool> InitiateProvider(HttpContext context, IRblProvider provider)
+        {
+            _logger.LogEvent(LogLevel.Information, $"Checking Rbl Provider {provider.ProviderName} against Url {provider.ProviderUrl}...");
+            var listed = await provider.CheckProvider(context, _logger);
+
+            if (listed && !_continueChecks)
+            {
+                _logger.LogEvent(LogLevel.Information, $"Remote IP/PTR is listed on {provider.ProviderName}");
+                _logger.LogEvent(LogLevel.Information, "Cancelling further Rbl checks as ContinueChecks is set to false");
+                return true;
+            }
+
+            _logger.LogEvent(LogLevel.Information, "Moving onto next provider...");
+            return false;
         }
 
         /// <summary>
@@ -76,7 +90,7 @@ namespace TrotterWatch.Core
         /// </summary>
         /// <param name="requestIp"></param>
         /// <returns></returns>
-        public bool IsInternal(IPAddress requestIp)
+        private bool IsInternal(IPAddress requestIp)
         {
             if (requestIp.ToString() == "::1") return true;
 

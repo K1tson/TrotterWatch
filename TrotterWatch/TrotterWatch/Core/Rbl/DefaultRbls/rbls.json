@@ -1,0 +1,13 @@
+﻿[
+  {
+    "Name": "Spamhaus Zen",
+    "Url": "zen.spamhaus.org",
+    "Type": "Both"
+  },
+  {
+    "Name": "SPFBL",
+    "Url": "dnsbl.spfbl.net",
+    "Type": "Ip"
+  }
+
+] 

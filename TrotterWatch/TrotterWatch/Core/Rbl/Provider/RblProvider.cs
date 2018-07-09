@@ -65,7 +65,7 @@ namespace TrotterWatch.Core.Rbl.Provider
 
             _logger.LogEvent(LogLevel.Information, "Initiating IP Lookup against RBL");
             await RblHostLookup(formattedIp);
-
+         
             _logger.LogEvent(LogLevel.Information, $"RBL Lookup has completed for {ProviderName}");
             return _isListed;
         }
@@ -127,7 +127,10 @@ namespace TrotterWatch.Core.Rbl.Provider
             return queryFormat.ToString();
         }
 
-
+        /// <summary>
+        /// Checks if the Rbl request returned any results
+        /// </summary>
+        /// <param name="results"></param>
         private void CheckResults(IPAddress[] results)
         {
             if (results.Any())
@@ -150,6 +153,7 @@ namespace TrotterWatch.Core.Rbl.Provider
                 var value = $"{requestIp} is listed on {ProviderName}({ProviderUrl}) due to {result}";
                 _context.Response.Headers.Add(key, value);
                 _context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                _logger.LogEvent(LogLevel.Information, "RBL has been stamped to header");
             }
         }
     }
