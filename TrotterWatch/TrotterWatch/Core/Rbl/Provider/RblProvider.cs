@@ -6,6 +6,8 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using TrotterWatch.Logging;
 
 namespace TrotterWatch.Core.Rbl.Provider
 {
@@ -13,12 +15,15 @@ namespace TrotterWatch.Core.Rbl.Provider
     {
         private IPHostEntry _requestHostname;
         private HttpContext _context;
+        private bool _isListed;
+        private TrotterLog _logger;
 
         public RblProvider(string name, string url, RblType type)
         {
             ProviderName = name;
             ProviderUrl = url;
             ProviderType = type;
+            _isListed = false;
         }
 
         /// <summary>
@@ -40,19 +45,29 @@ namespace TrotterWatch.Core.Rbl.Provider
         /// Checks requests IP and/or Hostname against the Rbl's database
         /// </summary>
         /// <param name="context"></param>
+        /// <param name="logger"></param>
         /// <returns></returns>
-        public async Task<bool> CheckProvider(HttpContext context)
+        public async Task<bool> CheckProvider(HttpContext context, TrotterLog logger)
         {
+            _logger = logger;
             _context = context;
 
             var requestIp = context.Connection.RemoteIpAddress;
             var formattedIp = FormatIp(requestIp);
 
-            if (ProviderType != RblType.Both && ProviderType != RblType.Hostname)
-                return await RblHostLookup(formattedIp);
+            if (ProviderType == RblType.Both || ProviderType == RblType.Hostname)
+            {
+                _logger.LogEvent(LogLevel.Information, "Initiating PTR Lookup & Hostname check...");
+                await PtrLookupIp(requestIp);
+                await RblHostLookup(_requestHostname.HostName);
+                _logger.LogEvent(LogLevel.Information, "PTR Lookup & Hostname check completed!");
+            }
 
-            await PtrLookupIp(requestIp);
-            return await RblHostLookup(_requestHostname.HostName);
+            _logger.LogEvent(LogLevel.Information, "Initiating IP Lookup against RBL");
+            await RblHostLookup(formattedIp);
+
+            _logger.LogEvent(LogLevel.Information, $"RBL Lookup has completed for {ProviderName}");
+            return _isListed;
         }
 
         /// <summary>
@@ -66,9 +81,9 @@ namespace TrotterWatch.Core.Rbl.Provider
             {
                 _requestHostname = await Dns.GetHostEntryAsync(ip);
             }
-            catch (SocketException)
+            catch (SocketException ex)
             {
-                //ToDo: Add Logging
+                _logger.LogEvent(LogLevel.Error, $"PTR Lookup Error: {ex.Message}");
             }
         }
 
@@ -76,17 +91,16 @@ namespace TrotterWatch.Core.Rbl.Provider
         /// Checks the request hostname against the remote Rbl database.
         /// </summary>
         /// <returns></returns>
-        private async Task<bool> RblHostLookup(string query)
+        private async Task RblHostLookup(string query)
         {
             try
             {
                 var ipresult = await Dns.GetHostAddressesAsync($"{query}.{ProviderUrl}");
-                return CheckResults(ipresult);
+                CheckResults(ipresult);
             }
-            catch (SocketException)
+            catch (SocketException ex)
             {
-                return false;
-                //ToDo: Add Logging
+                _logger.LogEvent(LogLevel.Error, $"RBL Lookup Error: {ex.Message}");
             }
         }
 
@@ -102,7 +116,7 @@ namespace TrotterWatch.Core.Rbl.Provider
 
             for (int i = 0; i < octetArr.Length; i++)
             {
-                queryFormat.Append(octetArr);
+                queryFormat.Append(octetArr[i]);
 
                 if (i != 3)
                 {
@@ -114,15 +128,13 @@ namespace TrotterWatch.Core.Rbl.Provider
         }
 
 
-        private bool CheckResults(IPAddress[] results)
+        private void CheckResults(IPAddress[] results)
         {
             if (results.Any())
             {
                 StampHttpHeader(results);
-                return true;
+                _isListed = true;
             }
-
-            return false;
         }
 
         /// <summary>
