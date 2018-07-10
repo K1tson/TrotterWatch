@@ -60,5 +60,18 @@ namespace TrotterWatchTests
            Assert.IsTrue(results.Any());
         }
 
+
+        /// <summary>
+        /// Checks if RBL items are pointing to the same reference.
+        /// </summary>
+        [TestMethod]
+        public void TestProviderFactorySingleton()
+        {
+            var results = ProviderFactory.ReturnRblItems();
+            var resultsTwo = ProviderFactory.ReturnRblItems();
+
+            Assert.AreSame(results, resultsTwo);
+        }
+
     }
 }
